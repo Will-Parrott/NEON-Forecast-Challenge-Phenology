@@ -27,11 +27,14 @@ print("Reading site_date")
 site_data <- readr::read_csv("https://raw.githubusercontent.com/eco4cast/neon4cast-targets/main/NEON_Field_Site_Metadata_20220412.csv") |> 
   dplyr::filter(phenology == 1)
 
+print("Focal sites")
 focal_sites <- site_data$field_site_id
 
+print("Targets")
 url <- "https://sdsc.osn.xsede.org/bio230014-bucket01/challenges/targets/project_id=neon4cast/duration=P1D/phenology-targets.csv.gz"
 targets <- readr::read_csv(url, show_col_types = FALSE)
 
+print("Targets filter")
 targets <- targets |> 
   filter(site_id %in% focal_sites,
          variable == "gcc_90") |> 
@@ -40,16 +43,20 @@ targets <- targets |>
 
 
 # Past weather
+print("Past weather")
 met_variables <- c("air_temperature", "surface_downwelling_shortwave_flux_in_air")
 
+print("Weather past s3")
 weather_past_s3 <- neon4cast::noaa_stage3()
 
+print("Weather past")
 weather_past <- weather_past_s3 |> 
   filter(site_id %in% focal_sites,
          datetime >= ymd('2017-01-01'),
          variable %in% met_variables) |> 
     dplyr::collect()
 
+print("weather_past_daily")
 weather_past_daily <- weather_past |> 
   mutate(datetime = as_date(datetime)) |> 
   group_by(datetime, site_id, variable) |> 
@@ -59,6 +66,7 @@ weather_past_daily <- weather_past |>
   pivot_wider(names_from = variable, values_from = prediction)
 
 # Future weather
+print("Forecast and noaa date")
 forecast_date = Sys.Date()
 noaa_date = forecast_date - days(1)
 
