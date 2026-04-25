@@ -7,6 +7,10 @@
 
 model_id <- "(Random)_Forests_Turn_Green"
 
+#install docker non native packages
+install.packages("tidymodels")
+install.packages("ranger")
+
 #Bring in necessary packages
 library(tidyverse)
 library(tidymodels)
