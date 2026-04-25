@@ -13,12 +13,16 @@ install.packages("ranger")
 
 #Bring in necessary packages
 library(tidyverse)
+print("tidyverse")
 library(tidymodels)
+print("tidymodels")
 library(lubridate)
+print("lubridate")
 library(ranger)
-
+print("ranger")
 
 #Bring in targets
+print("Reading site_date")
 
 site_data <- readr::read_csv("https://raw.githubusercontent.com/eco4cast/neon4cast-targets/main/NEON_Field_Site_Metadata_20220412.csv") |> 
   dplyr::filter(phenology == 1)
