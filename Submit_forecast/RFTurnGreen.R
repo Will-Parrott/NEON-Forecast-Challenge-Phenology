@@ -52,7 +52,7 @@ weather_past_s3 <- neon4cast::noaa_stage3()
 print("Weather past")
 weather_past <- weather_past_s3 |> 
   filter(site_id %in% focal_sites,
-         datetime >= ymd('2017-01-01'),
+         datetime >= ymd('2020-09-24'),
          variable %in% met_variables) |> 
     dplyr::collect()
 
