@@ -59,7 +59,7 @@ weather_past <- weather_past_s3 |>
 print("weather_past_daily")
 weather_past_daily <- weather_past |> 
   mutate(datetime = as_date(datetime)) |> 
-  group_by(datetime, site_id, variable) |> 
+  group_by(datetime, site_id, variable, parameter) |> 
   summarize(prediction = mean(prediction, na.rm = TRUE), .groups = "drop") |> 
   # convert air temperature to Celsius if it is included in the weather data
   mutate(prediction = ifelse(variable == "air_temperature", prediction - 273.15, prediction)) |> 
