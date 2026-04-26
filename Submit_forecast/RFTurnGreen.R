@@ -47,14 +47,11 @@ print("Past weather")
 met_variables <- c("air_temperature", "surface_downwelling_shortwave_flux_in_air")
 
 print("Weather past s3")
-weather_past_s3 <- neon4cast::noaa_stage3()
+weather_past_s3 <- neon4cast::noaa_stage3() |> filter(site_id %in% focal_sites, datetime >= ymd('2020-09-24'),
+         variable %in% met_variables) 
 
 print("Weather past")
-weather_past <- weather_past_s3 |> 
-  filter(site_id %in% focal_sites,
-         datetime >= ymd('2020-09-24'),
-         variable %in% met_variables) |> 
-    dplyr::collect()
+weather_past <- weather_past_s3 |>  dplyr::collect()
 
 print("weather_past_daily")
 weather_past_daily <- weather_past |> 
