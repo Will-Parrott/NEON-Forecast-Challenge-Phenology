@@ -46,21 +46,30 @@ targets <- targets |>
 print("Past weather")
 met_variables <- c("air_temperature", "surface_downwelling_shortwave_flux_in_air")
 
-print("Weather past s3")
-weather_past_s3 <- neon4cast::noaa_stage3() |> filter(site_id %in% focal_sites, datetime >= ymd('2020-09-24'),
-         variable %in% met_variables) 
+weather_past_daily <- data.frame()
+for(i in 1:length(focal_sites)){
+  focal_site = focal_sites[i]
+  print(focal_site)
+  weather_past_s3 <- neon4cast::noaa_stage3()
+  
+  weather_past <- weather_past_s3 |> 
+    filter(site_id == focal_site,
+           datetime >= ymd('2017-01-01'),
+           datetime <= ymd('2023-12-31'),
+           variable %in% met_variables) |> 
+    dplyr::collect()
+  
+  weather_past_agg <- weather_past |> 
+    mutate(datetime = as_date(datetime)) |> 
+    group_by(datetime, site_id, variable) |> 
+    summarize(prediction = mean(prediction, na.rm = TRUE), .groups = "drop") |> 
+    # convert air temperature to Celsius if it is included in the weather data
+    mutate(prediction = ifelse(variable == "air_temperature", prediction - 273.15, prediction)) |> 
+    pivot_wider(names_from = variable, values_from = prediction)
+  
+  weather_past_daily <- rbind(weather_past_daily, weather_past_agg)
+}
 
-print("Weather past")
-weather_past <- weather_past_s3 |>  dplyr::collect()
-
-print("weather_past_daily")
-weather_past_daily <- weather_past |> 
-  mutate(datetime = as_date(datetime)) |> 
-  group_by(datetime, site_id, variable, parameter) |> 
-  summarize(prediction = mean(prediction, na.rm = TRUE), .groups = "drop") |> 
-  # convert air temperature to Celsius if it is included in the weather data
-  mutate(prediction = ifelse(variable == "air_temperature", prediction - 273.15, prediction)) |> 
-  pivot_wider(names_from = variable, values_from = prediction)
 
 # Future weather
 print("Forecast and noaa date")
