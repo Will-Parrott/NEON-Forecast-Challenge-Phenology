@@ -1,7 +1,5 @@
 on:
   workflow_dispatch:
-  schedule:
-  - cron: "0 12 * * *" 
 
 jobs:
   run_forecast:
@@ -16,7 +14,7 @@ jobs:
           
  # Point to the right path, run the right Rscript command
       - name: Run automatic forecast submission
-        run: Rscript Submit_forecast/RFTurnGreen.R
+        run: Rscript Submit_forecast/PNGCommitDummy
         
       - name: Mark directory as safe
         run: git config --global --add safe.directory /__w/NEON-Forecast-Challenge-Phenology/NEON-Forecast-Challenge-Phenology
