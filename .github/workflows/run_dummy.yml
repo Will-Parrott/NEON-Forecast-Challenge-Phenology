@@ -1,0 +1,24 @@
+on:
+  workflow_dispatch:
+
+jobs:
+  run_forecast:
+    runs-on: ubuntu-latest
+    container:
+      image: eco4cast/rocker-neon4cast
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+ # Point to the right path, run the right Rscript command
+      - name: Run automatic forecast submission
+        run: Rscript Submit_forecast/PNGCommitDummy.R
+
+      - name: Commit and push plot
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: "Workflow plot"
+          file_pattern: "Submit_forecast/*.png"
+          branch: main
