@@ -109,6 +109,7 @@ model_performance <- data.frame(
   rsq = numeric()
 )
 
+set.seed(228888)
 forecast_df <- NULL
 for(s in 1:length(focal_sites)){
   targets_m <- targets |> 
@@ -121,8 +122,6 @@ for(s in 1:length(focal_sites)){
   
   weather_ensemble_names <- unique(weather_future_daily$parameter)
   #----------MODEL SETUP------------
-  set.seed(228888) # 22 88 8 8, ring ring
-  
   split <- initial_split(targets_m, prop = 0.80, strata = site_id) #this stratification doesn't work
   train_gcc<- training(split)
   test_gcc <- testing(split)
@@ -172,8 +171,11 @@ for(s in 1:length(focal_sites)){
   #Fit to training data
   gcc_fit <- ud_wF |> fit(data = train_gcc)
   
-  gcc_predict <- predict(gcc_fit, new_data = test_gcc)
+  gcc_predict <- predict(gcc_fit, new_data = test_gcc) |> mutate(targets = test_gcc$gcc_90)
   gcc_pred_test <- bind_cols(test_gcc, gcc_predict)
+  gcc_resid_sd <- sd(gcc_predict$targets - gcc_predict$.pred, na.rm = TRUE)
+  
+  process_df <- rnorm(n_members, 0, sd = gcc_resid_sd)
   #---------MODEL EVALUATE-----------
   multi_metric <- metric_set(rmse, rsq)
   metric_table <- gcc_pred_test |> 
@@ -190,13 +192,13 @@ for(s in 1:length(focal_sites)){
   
   #plot data for expected trends
   dates_2025 <- seq(as.Date("2025-01-01"), as.Date("2025-12-31"), by="day")
-  targets_2025 <- targets_m |> filter(as.Date(datetime) %in% dates_2025)
-  ggplot(targets_2025, aes(x = datetime, y = gcc_90)) + geom_line()
+  targets_2025 <- targets |> filter(as.Date(datetime) %in% dates_2025, site_id == focal_sites[s])
+  ggplot(targets_2025, aes(x = datetime, y = observation)) + geom_line()
   
   #set dataframe for stable period to determine observation uncertainty
   stable_per <- seq(as.Date("2025-05-15"), as.Date("2025-06-15"), by = "day")
   targets_unc_ref <- targets_2025 |> filter(as.Date(datetime) %in% stable_per)
-  init_sd <- sd(targets_unc_ref$gcc_90)
+  init_sd <- sd(targets_unc_ref$observation, na.rm = TRUE)
   init_uc_df <- rnorm(n_members, mean = 0, sd = init_sd)
   
   for(d in 1:length(forecasted_dates)){
@@ -215,13 +217,9 @@ for(s in 1:length(focal_sites)){
       met_ens <- weather_ensemble_names[met_ens_id]
       
       if(d == 1){ #set current lagged value - last available data for d=1, otherwise use last available prediction
-        lag_curr <- targets_m$lag_gcc[nrow(targets_m)] + init_uc_df[met_ens+1]
+        lag_curr <- targets_m$lag_gcc[nrow(targets_m)] + init_uc_df[ens+1]
       }else{
-        if(met_ens <30){
-          curr_ens_pred <- forecast_df |> filter(parameter == met_ens + 1)
-        }else{
-          curr_ens_pred <- forecast_df |> filter(parameter == met_ens)
-        }
+        curr_ens_pred <- forecast_df |> filter(datetime == forecasted_dates[d-1], parameter == ens)
         lag_curr <- curr_ens_pred$prediction[nrow(curr_ens_pred)]
       }
       
@@ -232,7 +230,7 @@ for(s in 1:length(focal_sites)){
                project_id = unique(targets_m$project_id),
                duration = unique(targets_m$duration))
       
-      forecasted_gcc <- predict(gcc_fit, new_data = pred_df)
+      forecasted_gcc <- predict(gcc_fit, new_data = pred_df) + process_df[ens]
       
       curr_site_df <- tibble(datetime = pred_df$datetime,
                              reference_datetime = forecast_date,
@@ -248,6 +246,7 @@ for(s in 1:length(focal_sites)){
   print(paste(focal_sites[s], " forecast run"))
 }
 write.csv(forecast_df, file = "forecast_df.csv")
+
 
 ggplot(forecast_df, aes(datetime, prediction, group=parameter, color=site_id)) + geom_line()
 #---- Covert to EFI standard ----
@@ -267,7 +266,7 @@ forecast_df_EFI <- forecast_df %>%
 
 # ----- Submit forecast -----
 # Write the forecast to file
-theme <- 'terrestrial'
+theme <- 'phenology'
 date <- forecast_df_EFI$reference_datetime[1]
 forecast_name <- paste0(forecast_df_EFI$model_id[1], ".csv")
 forecast_file <- paste(theme, date, forecast_name, sep = '-')
