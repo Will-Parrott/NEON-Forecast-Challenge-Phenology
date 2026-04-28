@@ -14,8 +14,11 @@ jobs:
           
  # Point to the right path, run the right Rscript command
       - name: Run automatic forecast submission
-        run: Rscript Submit_forecast/PNGCommitDummy.R
-
+        run: Rscript Submit_forecast/PNGCommitDummy
+        
+      - name: Mark directory as safe
+        run: git config --global --add safe.directory /__w/NEON-Forecast-Challenge-Phenology/NEON-Forecast-Challenge-Phenology
+        
       - name: Commit and push plot
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
