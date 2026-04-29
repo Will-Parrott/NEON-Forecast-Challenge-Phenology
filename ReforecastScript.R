@@ -93,7 +93,7 @@ for(s in 1:length(focal_sites)){
            site_id == focal_sites[s]) |> 
     na.omit()
   
-  weather_ensemble_names <- unique(weather_future_daily$parameter)
+
   #----------MODEL SETUP------------
   split <- initial_split(targets_m, prop = 0.80, strata = site_id) #this stratification doesn't work
   train_gcc<- training(split)
@@ -193,6 +193,8 @@ for(s in 1:length(focal_sites)){
       mutate(prediction = ifelse(variable == "air_temperature", prediction - 273.15, prediction)) |> 
       pivot_wider(names_from = variable, values_from = prediction) |> 
       select(any_of(c('datetime', 'site_id', met_variables, 'parameter')))
+    
+    weather_ensemble_names <- unique(weather_future_daily$parameter)
     
     for(d in 1:length(forecasted_dates)){
       
