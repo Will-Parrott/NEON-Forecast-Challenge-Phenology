@@ -14,7 +14,7 @@ jobs:
           
  # Point to the right path, run the right Rscript command
       - name: Run automatic forecast submission
-        run: Rscript Submit_forecast/ReforecastScript.R
+        run: Rscript ReforecastScript.R
         
       - name: Mark directory as safe
         run: git config --global --add safe.directory /__w/NEON-Forecast-Challenge-Phenology/NEON-Forecast-Challenge-Phenology
