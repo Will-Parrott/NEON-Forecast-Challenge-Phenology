@@ -70,7 +70,7 @@ for(i in 1:length(focal_sites)){
 #Forecast parameters
 ref_dates <- seq(ymd("2024-01-01"), ymd("2024-12-31"), by = "2 week")
 forecast_horizon <- 30
-n_members <- 31
+n_members <- 200
 
 
 
