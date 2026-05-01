@@ -1,0 +1,287 @@
+---
+title: "(Random) Forests Turn Green"
+author: "William Parrott"
+format: 
+  html:
+    embed-resources: TRUE
+
+editor: visual
+---
+
+# Part 1 - Model Description
+
+### Model Structure
+
+The model is structured
+
+### Explanation of Substantive Novelty
+
+The only other model for gcc_90 listed on the STAC browser is tg_randfor. While this model also uses the ranger engine, it lacks a lag that is pivotal for incorporating autoregression that is important in phenology prediction. Additionally, this model incorporates measurement noise and initial condition uncertainty that is estimated directly from the data. This allows it to factor for different types of uncertainty in a different way than is produced in tg_randfor.
+
+### Uncertainty Sources and Implementation
+
+Sources Included:
+
+-   **Driver Uncertainty**: NOAA weather data comes with 31 ensemble members and measurement uncertainties that are baked into accessing their forecasts. As such, no additional steps besides the inclusion of drivers need to be taken to account for this.
+
+-   **Process Uncertainty**: After model fitting at each site, the residuals were used to establish a standard deviation of predictions. This was factored into the final model by drawing a random value from a zero-mean distribution with that standard deviation and adding it to each prediction. The code for this appears as such:
+
+```{r}
+#| eval: FALSE
+
+#- Predict Using the Model, then Create a Distribution -
+gcc_predict <- predict(gcc_fit, new_data = test_gcc) |> mutate(targets = test_gcc$gcc_90)
+gcc_pred_test <- bind_cols(test_gcc, gcc_predict)
+gcc_resid_sd <- sd(gcc_predict$targets - gcc_predict$.pred, na.rm = TRUE)
+process_df <- rnorm(n_members, 0, sd = gcc_resid_sd)
+
+# - Later in the script, Add process uncertainty to predictions -
+forecasted_gcc <- predict(gcc_fit, new_data = pred_df) + process_df[ens]
+```
+
+-   **Initial Conditions Uncertainty**: Initial conditions uncertainty was accounted for twofold: first by including a lag, then by including a variable that represents measurement uncertainty. Measurement uncertainty was accounted for by calculating the standard deviation of measurements between May 15 and June 15, when gcc_90 is relatively stable. Variation in this time frame is assumed to be due to measurement error. Then, on the first date of the forecast, the initial conditions were accounted for by incorporating the last available value for gcc_90 with a random draw from a zero-mean distribution with the measurement deviation calculated above. For subsequent days, data from the prior day's forecast was used in order to propagate uncertainty along the whole forecast. The code for this appears as such:
+
+```{r}
+
+#| eval: FALSE
+#plot data for expected trends
+dates_2025 <- seq(as.Date("2025-01-01"), as.Date("2025-12-31"), by="day")
+targets_2025 <- targets |> filter(as.Date(datetime) %in% dates_2025, site_id == focal_sites[s])
+ggplot(targets_2025, aes(x = datetime, y = observation)) + geom_line()
+
+#set dataframe for stable period to determine observation uncertainty
+stable_per <- seq(as.Date("2025-05-15"), as.Date("2025-06-15"), by = "day")
+targets_unc_ref <- targets_2025 |> filter(as.Date(datetime) %in% stable_per)
+init_sd <- sd(targets_unc_ref$observation, na.rm = TRUE)
+init_uc_df <- rnorm(n_members, mean = 0, sd = init_sd)
+
+#If loop to determine initial conditions uncertainty
+if(d == 1){ #set current lagged value - last available data for d=1, otherwise use last available prediction
+  lag_curr <- targets_m$lag_gcc[nrow(targets_m)] + init_uc_df[ens+1]
+}else{
+  curr_ens_pred <- forecast_df |> filter(datetime == forecasted_dates[d-1], parameter == ens)
+  lag_curr <- curr_ens_pred$prediction[nrow(curr_ens_pred)]
+}
+
+```
+
+Sources Excluded:
+
+-   **Parameter Uncertainty**: Since hyperparameters for the random forest model were tuned for the best-fitting model, there wasn't much room to incorporate parameter uncertainty. If one were to do that, though, they could take the output of the different hyperparameters that were tried and create a distribution of potential parameters to pull from. However, since this would be computationally demanding, it was excluded from this forecast.
+
+### Registration Input
+
+-   What forecasting challenge are you registering for? **neon4cast**
+
+-   model_id: (Random)\_Forests_Turn_Green
+
+-   Long name of the model: **Using Random Forest Models With Lag to Forecast Green Chromatic Coordinate**
+
+-   Contact Name: **William Parrott**
+
+-   Contact email: **williamcparrott\@gmail.com**
+
+-   Can we publicly list your name and email as part of the model metadata? **No**
+
+-   Are the name and email for a course instructor? **No**
+
+-   Institution: **Virginia Tech**
+
+-   Web Link to Model Code: <https://github.com/Will-Parrott/NEON-Forecast-Challenge-Phenology/blob/main/Submit_forecast/RFTurnGreen.R>
+
+-   Which category best matches your modeling approach? **Machine learning**
+
+-   Describe your modeling approach in your own words: **This script uses a random forest model with the package ranger to predict gcc_90 (green chromatic coordinate) with input variables of air temperature, shortwave radiation flux, and lagged green chromatic coordinate. The model itself is fit using ten-fold cross validation and tuned on all available past targets and weather data.**
+
+-   Does the forecast use drivers? **Yes**
+
+-   Does your forecast include uncertainty from drivers? **Yes**
+
+-   What are your model drivers? **Model drivers include surface_downwelling_shortwave_flux_in_air (shortwave radiation input) and air temperature.**
+
+-   Is your forecast model dynamic? **Yes**
+
+-   Do your forecasts include uncertainty from initial conditions? **Yes and they were estimated from data**
+
+-   Does your model include parameters? **Yes and at least one is estimated from data**
+
+-   Does your forecast include uncertainty from the model parameters? **No**
+
+-   Do you update your initial conditions or parameters between forecast submissions using newly available data? **Both initial conditions and parameters**
+
+-   What method did you use if you updated your initial conditions or parameters using data assimilation? **Model refitting**
+
+-   Does your forecast include uncertainty from the model? **Yes and the uncertainty was estimated from the data**
+
+-   Does your forecast include uncertainty from measurement noise? **Yes and the noise was estimated from data**
+
+-   Does your forecast include uncertainty from using different models? **No**
+
+-   Does your forecast include uncertainty from parameter random effects? **No**
+
+# Part 2 - Reforecast Analysis
+
+To evaluate the performance of this model, it was reforecasted for 2024. The reforecast featured fewer ensemble members (n_members = 31) than the original due to computational restrictions, but is no less appropriate for evaluation and serves as a more conservative benchmark by which future iterations can be compared. The CRPS was calculated for each day in 2024, then compared with climatology and persistence models as baselines on three fronts: horizon, site vegetation type, and season.
+
+## Bringing in Necessary Packages
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(lubridate)
+library(ranger)
+library(scoringRules)
+```
+
+## Bringing in Targets and Reforecast Data
+
+```{r}
+ttf <- seq(ymd("2024-01-01"), ymd("2024-12-31"), by = "day")
+site_data <- readr::read_csv("https://raw.githubusercontent.com/eco4cast/neon4cast-targets/main/NEON_Field_Site_Metadata_20220412.csv") |> 
+  dplyr::filter(phenology == 1)
+
+focal_sites <- site_data$field_site_id
+
+url <- "https://sdsc.osn.xsede.org/bio230014-bucket01/challenges/targets/project_id=neon4cast/duration=P1D/phenology-targets.csv.gz"
+targets <- readr::read_csv(url, show_col_types = FALSE)
+
+targets <- targets |> 
+  filter(site_id %in% focal_sites,
+         variable == "gcc_90", 
+         as.Date(datetime) %in% ttf) |> 
+  group_by(site_id) |> 
+  mutate(lag_gcc = lag(observation,1))
+
+# Reget reforecast data
+forecast_df_EFI <- read.csv("C:/Users/willi/Desktop/NEON-Forecast-Challenge-Phenology/reforecast_df_2024.csv") 
+forecasted_data <- forecast_df_EFI |>  
+  mutate(horizon = as.numeric(mdy(datetime) - mdy(reference_datetime))) |> 
+  group_by(datetime, horizon, site_id) |> 
+  summarize(mean = mean(prediction)) |> 
+  mutate(datetime = mdy(datetime))
+
+```
+
+## Calculating CRPS on Reforecast, Bringing in Baseline Models
+
+```{r}
+ref_dates = seq(as.Date("2024-01-01"), as.Date("2024-12-31"), by="day")
+
+model_crps <- data.frame(site_id = character(), horizon = integer(), crps = numeric(), datetime = as.Date(numeric()))  
+for(i in 1:length(focal_sites)){
+  curr_site <- focal_sites[i]
+  for (t in 2:length(ref_dates)){
+    targets_ref <- targets |> 
+      filter(as.Date(datetime) == ref_dates[t],
+             site_id == curr_site)
+    model_ref <- forecasted_data |> 
+      filter(datetime == ref_dates[t],
+             site_id == curr_site)
+    horizon <- model_ref$horizon
+    if(is.na(targets_ref$observation[1])){
+      model_crps <- model_crps |> add_row(horizon = horizon, crps = NA, datetime = ref_dates[t], site_id = curr_site)
+    }else{
+      crps <- crps_sample(targets_ref$observation, model_ref$mean)
+      model_crps<- model_crps |> add_row(horizon = horizon, crps = crps, datetime = ref_dates[t], site_id = curr_site)
+    }
+  }
+}
+
+veg_t <- unique(site_data$phenocam_vegetation)
+sites_by_vt <- cbind(site_id = site_data$field_site_id, veg_type = site_data$phenocam_vegetation)
+vt_site_crps <- merge(model_crps, sites_by_vt, by = 'site_id') |> cbind(model_id = rep("(Random)_Forests_Turn_Green",nrow(model_crps)))
+
+
+season_lineup <- data.frame(datetime = ymd(unique(vt_site_crps$datetime)), season = NA)
+for(d in 1:length(season_lineup$datetime)){
+  if(month(season_lineup$datetime[d]) %in% c(12, 1,2)){
+    season_lineup$season[d] = "Winter"
+  }else if(month(season_lineup$datetime[d]) %in% c(3,4,5)){
+    season_lineup$season[d] = "Spring"
+  }else if(month(season_lineup$datetime[d]) %in% c(6,7,8)){
+    season_lineup$season[d] = "Summer"
+  }else if(month(season_lineup$datetime[d]) %in% c(9, 10, 11)){
+    season_lineup$season[d] = "Fall"
+  }
+}
+
+#ALL SITES average
+
+model_crps_avg <- model_crps |> 
+  group_by(horizon) |> 
+  summarize(crps = as.numeric(mean(crps, na.rm = TRUE))) |> 
+  mutate(model = "(Random)_Forests_Turn_Green")
+
+model_crps_szn <- model_crps |> 
+  group_by(datetime, reference_datetime) |> 
+  summarize(crps = as.numeric(mean(crps, na.rm = TRUE))) |> 
+  summarize(horizon = )
+  mutate(model_id = "(Random)_Forests_Turn_Green") |> 
+  merge(season_lineup, by = 'datetime')
+
+baseline_models <- arrow::open_dataset("s3://anonymous@bio230014-bucket01/challenges/scores/bundled-parquet/project_id=neon4cast/duration=P1D/variable=gcc_90?endpoint_override=sdsc.osn.xsede.org") |> 
+  filter(site_id %in% focal_sites,
+         reference_datetime < as_datetime("2024-12-31"),
+         reference_datetime > as_datetime("2024-01-01"),
+         model_id %in% c("climatology", "persistenceRW")) |> 
+  collect()
+```
+
+## Evaluation by Horizon
+
+```{r}
+crps_bl <- baseline_models |> 
+  mutate(horizon = as.numeric(datetime - reference_datetime)) |> 
+  summarize(mean_crps = mean(crps, na.rm = TRUE), .by = c("model_id", "horizon")) |> 
+  pivot_wider(names_from = model_id, values_from = mean_crps) |> 
+  subset(!(horizon %in% c(32, 33, 34, 35))) |> 
+  pivot_longer(cols = 2:3, names_to = "model", values_to = "crps") |> 
+  rbind(model_crps_avg)
+```
+
+## Evaluation by Vegetation Type
+
+```{r}
+bl_vt_site_crps <- merge(baseline_models, sites_by_vt, by = 'site_id')
+
+
+crps_bl_vt <- bl_vt_site_crps |> 
+  mutate(horizon = as.numeric(ymd(datetime) - ymd(reference_datetime))) |> 
+  group_by(datetime, site_id, model_id, horizon, veg_type) |> 
+  summarise(crps = mean(crps, na.rm = T)) |> 
+  subset(!(horizon %in% c(32, 33, 34, 35))) |> 
+  rbind(vt_site_crps) |> 
+  group_by(model_id,veg_type) |> 
+  summarise(crps = mean(crps, na.rm = T))
+```
+
+## Evaluation by Season
+
+```{r}
+bl_szn_site_crps <- baseline_models |> 
+  mutate(datetime = ymd(datetime)) |> 
+  merge(season_lineup, by = 'datetime') |> 
+  group_by(datetime, season, model_id) |> 
+  summarise(crps = mean(crps, na.rm = TRUE)) |> 
+  rbind(model_crps_szn)
+```
+
+# Part 3 - Reproducibility Checklist
+
+Details for Reproducibility:
+
+-   model_id: (Random)\_Forests_Turn_Green
+
+-   Github Repository: <https://github.com/Will-Parrott/NEON-Forecast-Challenge-Phenology>
+
+-   Forecast Generation Code: <https://github.com/Will-Parrott/NEON-Forecast-Challenge-Phenology/blob/main/Submit_forecast/RFTurnGreen.R>
+
+-   Quarto Report: \<\>
+
+-   Forecast Outputs to Show Multiple Automated Runs:
+
+    -   Each day, forecast runs automatically generate a .png output labelled "gcc_90-DATE.png" and store it in the Submit_forecast folder.
+
+    -   <https://github.com/Will-Parrott/NEON-Forecast-Challenge-Phenology/tree/main/Submit_forecast>
+
+-   Model Entry in Challenge Catalog: <https://radiantearth.github.io/stac-browser/#/external/raw.githubusercontent.com/eco4cast/neon4cast-catalog/main/forecasts/Phenology/Daily_Green_chromatic_coordinate/models/(Random)_Forests_Turn_Green.json?.language=en>
