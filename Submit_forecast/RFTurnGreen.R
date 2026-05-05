@@ -5,7 +5,7 @@
 #//////////////////////////////////////////////////////////////// DATA SETUP ////////////////////////////////////////////////////////////
 #Model id
 
-model_id <- "(Random)_Forests_Turn_Green"
+model_id <- "Random_Forests_Turn_Green"
 
 #install docker non native packages
 install.packages("tidymodels")
